@@ -1,2 +1,9 @@
-# SOC - 2025
-Term Project - Group 2
+# Term Project - Phase #2
+
+Group #2
+
+## Authors
+- JJ
+- Mede
+- Dianita
+- Chris
