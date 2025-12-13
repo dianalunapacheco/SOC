@@ -207,4 +207,4 @@ marimo/_lsp/
 __marimo__/
 
 #VS config
-.vscode/
+.vscode/data/clean_data_a.csv
