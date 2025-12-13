@@ -288,15 +288,25 @@ def predict_emotions(tweets_df, model_path='./models/parsbert_emotion_model'):
 
 
 # main pipeline
-def run_emotion_analysis():
-    """Run the complete emotion analysis pipeline."""
+def run_emotion_analysis(test_mode=True, subset_size: int = 10) -> None:
+    """Run the complete emotion analysis pipeline.
+
+    :param test_mode: for testing only on a small subset (debugging).
+    :param subset_size: number of samples to use in test mode.
+    """
     print("\n" + "="*70)
-    print(" MAHSA AMINI MOVEMENT: EMOTION CLASSIFICATION (NLP) ")
+    mode_str = "TEST MODE" if test_mode else "FULL_RUN"
+    print(f" MAHSA AMINI MOVEMENT: EMOTION CLASSIFICATION (NLP) - {mode_str} ")
     print("="*70)
 
-    os.makedirs('../data', exist_ok=True)
-    os.makedirs('./models', exist_ok=True)
-    os.makedirs('./outputs', exist_ok=True)
+    # separate files for testing and real run
+    data_dir = '../data'
+    model_dir = './models' if not test_mode else './models_test'
+    output_dir = './outputs' if not test_mode else './outputs_test'
+
+    os.makedirs(data_dir, exist_ok=True)
+    os.makedirs(model_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
     # data prep
     print("\n[STAGE 1] DATA PREPROCESSING (Dataset A)")
@@ -307,7 +317,13 @@ def run_emotion_analysis():
         print(f"Loaded {len(tweets_a)} cleaned tweets")
     else:
         try:
+            print("Obtaining the data file...")
             tweets_a = obtain_file_a()
+            if test_mode:
+                print(f"Selecting a subset of {subset_size} samples for testing")
+                tweets_a = tweets_a.head(subset_size)
+
+            print("Cleaning the data...")
             tweets_a = clean_data_a(tweets_a)
             tweets_a.to_csv(cleaned_file, index=False)
             print(f"Saved to '{cleaned_file}'")
@@ -318,8 +334,14 @@ def run_emotion_analysis():
     # emotion labeling
     labeled_file = '../data/labeled_tweets_auto.csv'
     if not os.path.exists(labeled_file):
+
+        train_sample = 20 if test_mode else Config.TRAIN_SAMPLES
+
+        # Ensure we don't request more samples than we have
+        train_sample = min(train_sample, len(tweets_a))
+
         labeled_df = create_training_data_automatically(
-            tweets_a, sample_size=Config.TRAIN_SAMPLES)
+            tweets_a, sample_size=train_sample)
         print(f"\nCreated {len(labeled_df)} labeled training samples")
     else:
         print(f"\n[STAGE 2] Loading existing labeled data from "
@@ -330,7 +352,12 @@ def run_emotion_analysis():
     if not os.path.exists(model_path) or not os.path.exists(
             os.path.join(model_path, 'config.json')):
         print("\n[STAGE 3] TRAINING PARSBERT EMOTION CLASSIFIER")
-        train_emotion_classifier(labeled_file, output_dir=model_path)
+        try:
+            # low epochs if the function supports kwargs
+            train_emotion_classifier(labeled_file, output_dir=model_path, num_train_epochs=1)
+        except TypeError:
+            # fallback
+            train_emotion_classifier(labeled_file, output_dir=model_path)
     else:
         print("\n[STAGE 3] MODEL ALREADY TRAINED - Skipping training")
 
@@ -353,4 +380,4 @@ def run_emotion_analysis():
 
 
 if __name__ == "__main__":
-    run_emotion_analysis()
+    run_emotion_analysis(test_mode=True, subset_size=10)

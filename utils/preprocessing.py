@@ -39,9 +39,9 @@ class Config:
 
     # training optimization for smaller machines (Used by NLP)
     FAST_MODE = True
-    TRAIN_SAMPLES = 2000 if FAST_MODE else 5000
-    NUM_EPOCHS = 3 if FAST_MODE else 5
-    BATCH_SIZE = 8 if FAST_MODE else 16
+    TRAIN_SAMPLES = 10 if FAST_MODE else 5000
+    NUM_EPOCHS = 1  # if FAST_MODE else 5
+    BATCH_SIZE = 4  # if FAST_MODE else 16
 
     # bot filtering thresholds (Used by SNA)
     BOT_TWEET_THRESHOLD = 50
