@@ -10,18 +10,18 @@ warnings.filterwarnings('ignore')
 # CONFIGURATION
 class Config:
     """Configuration class for model and analysis parameters."""
+    # determine the run mode, testing, local or cloud
+    RUN_MODE = "TEST"
+
     # ParsBERT Model
     MODEL_NAME = "HooshvareLab/bert-fa-base-uncased"
     MAX_LENGTH = 128
-    BATCH_SIZE = 16
     LEARNING_RATE = 2e-5
-    NUM_EPOCHS = 5
     WARMUP_STEPS = 500
     WEIGHT_DECAY = 0.01
 
     # emotion labels (Ekman's 6 + Neutral)
-    LABELS = ["anger", "disgust", "fear", "joy", "sadness",
-              "surprise", "neutral"]
+    LABELS = ["anger", "disgust", "fear", "joy", "sadness", "surprise", "neutral"]
     LABEL2ID = {label: idx for idx, label in enumerate(LABELS)}
     ID2LABEL = {idx: label for idx, label in enumerate(LABELS)}
 
@@ -37,17 +37,26 @@ class Config:
         'Period 5': ('2023-01-01', '2023-01-31'),
     }
 
-    # training optimization for smaller machines (Used by NLP)
-    FAST_MODE = True
-    TRAIN_SAMPLES = 10 if FAST_MODE else 5000
-    NUM_EPOCHS = 1  # if FAST_MODE else 5
-    BATCH_SIZE = 4  # if FAST_MODE else 16
-
     # bot filtering thresholds (Used by SNA)
     BOT_TWEET_THRESHOLD = 50
     BOT_FOLLOWER_RATIO_LOW = 0.1
     BOT_FOLLOWER_RATIO_HIGH = 10
     BOT_CREATION_DATE = '2022-09-16'
+
+    # dynamic parameters
+    if RUN_MODE == "TEST":
+        # for fast debugging
+        TRAIN_SAMPLES = 50
+        NUM_EPOCHS = 1
+        BATCH_SIZE = 8
+    elif RUN_MODE == "LOCAL":
+        TRAIN_SAMPLES = 2000
+        NUM_EPOCHS = 3
+        BATCH_SIZE = 8
+    elif RUN_MODE == "CLOUD":
+        TRAIN_SAMPLES = None
+        NUM_EPOCHS = 4
+        BATCH_SIZE = 32
 
 
 # get data

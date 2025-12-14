@@ -208,3 +208,7 @@ __marimo__/
 
 #VS config
 .vscode/data/clean_data_a.csv
+
+#specific folders
+.DS_Store/
+models_test/

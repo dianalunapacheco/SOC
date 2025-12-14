@@ -139,10 +139,6 @@ def create_training_data_automatically(tweets_df, sample_size=5000):
         print(f"\nWarning: Some emotions have very few samples "
               f"(min={min_samples})")
 
-    labeled_df.to_csv('../data/labeled_tweets_auto.csv', index=False)
-    print("\nSaved automatically labeled data to "
-          "'../data/labeled_tweets_auto.csv'")
-
     return labeled_df
 
 
@@ -163,13 +159,31 @@ def train_emotion_classifier(labeled_tweets_path,
     print("\nEmotion distribution:")
     print(labeled_df['emotion'].value_counts())
 
+    min_class_count = labeled_df['label'].value_counts().min()
+
+    if min_class_count < 5:
+        print(f"\n[!] WARNING: Smallest class has only {min_class_count} samples.")
+        print("    Disabling stratification to prevent crash.")
+        stratify_strategy = None
+        stratify_val = None
+    else:
+        stratify_strategy = labeled_df['label'].values
+        stratify_val = 'infer'
+
     train_texts, temp_texts, train_labels, temp_labels = train_test_split(
         labeled_df['text'].values, labeled_df['label'].values, test_size=0.3,
-        random_state=42, stratify=labeled_df['label'].values)
+        random_state=42, stratify=stratify_strategy)
+
+    if stratify_strategy is not None:
+        temp_counts = pd.Series(temp_labels).value_counts()
+        if temp_counts.min() < 2:
+            stratify_strategy = None
+        else:
+            stratify_val = temp_labels
 
     val_texts, test_texts, val_labels, test_labels = train_test_split(
         temp_texts, temp_labels, test_size=0.5, random_state=42,
-        stratify=temp_labels)
+        stratify=stratify_val)
 
     print(f"\nTrain: {len(train_texts)}, Val: {len(val_texts)}, "
           f"Test: {len(test_texts)}")
@@ -197,7 +211,7 @@ def train_emotion_classifier(labeled_tweets_path,
         per_device_eval_batch_size=Config.BATCH_SIZE,
         warmup_steps=Config.WARMUP_STEPS, weight_decay=Config.WEIGHT_DECAY,
         learning_rate=Config.LEARNING_RATE, logging_steps=50,
-        evaluation_strategy="epoch", save_strategy="epoch",
+        eval_strategy="epoch", save_strategy="epoch",
         load_best_model_at_end=True, metric_for_best_model="accuracy",
         save_total_limit=2)
 
@@ -224,8 +238,13 @@ def train_emotion_classifier(labeled_tweets_path,
     }).map(tokenize_function, batched=True))
 
     y_pred = np.argmax(test_predictions.predictions, axis=-1)
-    print(classification_report(test_labels, y_pred,
-                                target_names=Config.LABELS, digits=4))
+    print(classification_report(
+        test_labels, y_pred,
+        labels=list(range(len(Config.LABELS))),
+        target_names=Config.LABELS,
+        digits=4,
+        zero_division=0
+    ))
 
     cm = confusion_matrix(test_labels, y_pred)
     plt.figure(figsize=(10, 8))
@@ -235,8 +254,8 @@ def train_emotion_classifier(labeled_tweets_path,
     plt.ylabel('True Label')
     plt.xlabel('Predicted Label')
     plt.tight_layout()
-    plt.savefig('./outputs/confusion_matrix.png', dpi=300)
-    print("\nConfusion matrix saved as './outputs/confusion_matrix.png'")
+    plt.savefig(os.path.join(output_dir, 'confusion_matrix.png'), dpi=300)
+    print(f"\nConfusion matrix saved as {os.path.join(output_dir, 'confusion_matrix.png')}")
     trainer.save_model(output_dir)
     tokenizer.save_pretrained(output_dir)
     print(f"\nModel saved to {output_dir}")
@@ -288,7 +307,7 @@ def predict_emotions(tweets_df, model_path='./models/parsbert_emotion_model'):
 
 
 # main pipeline
-def run_emotion_analysis(test_mode=True, subset_size: int = 10) -> None:
+def run_emotion_analysis(test_mode: bool = True, subset_size: int = 10) -> None:
     """Run the complete emotion analysis pipeline.
 
     :param test_mode: for testing only on a small subset (debugging).
@@ -300,9 +319,20 @@ def run_emotion_analysis(test_mode=True, subset_size: int = 10) -> None:
     print("="*70)
 
     # separate files for testing and real run
-    data_dir = '../data'
-    model_dir = './models' if not test_mode else './models_test'
-    output_dir = './outputs' if not test_mode else './outputs_test'
+    if test_mode:
+        data_dir = '../data_test'
+        model_dir = './models_test'
+        output_dir = './outputs_test'
+        cleaned_file = os.path.join(data_dir, 'clean_data_test.csv')
+        labeled_file = os.path.join(data_dir, 'labeled_tweets_test.csv')
+        emotion_file = os.path.join(data_dir, 'tweets_with_emotions_test.csv')
+    else:
+        data_dir = '../data'
+        model_dir = './models'
+        output_dir = './outputs'
+        cleaned_file = os.path.join(data_dir, 'clean_data_a.csv')
+        labeled_file = os.path.join(data_dir, 'labeled_tweets_auto.csv')
+        emotion_file = os.path.join(data_dir, 'tweets_with_emotions.csv')
 
     os.makedirs(data_dir, exist_ok=True)
     os.makedirs(model_dir, exist_ok=True)
@@ -310,64 +340,54 @@ def run_emotion_analysis(test_mode=True, subset_size: int = 10) -> None:
 
     # data prep
     print("\n[STAGE 1] DATA PREPROCESSING (Dataset A)")
-    cleaned_file = '../data/clean_data_a.csv'
-
     if os.path.exists(cleaned_file):
         tweets_a = pd.read_csv(cleaned_file)
         print(f"Loaded {len(tweets_a)} cleaned tweets")
     else:
         try:
-            print("Obtaining the data file...")
             tweets_a = obtain_file_a()
             if test_mode:
                 print(f"Selecting a subset of {subset_size} samples for testing")
+                # slice the data before cleaning and saving
                 tweets_a = tweets_a.head(subset_size)
 
-            print("Cleaning the data...")
             tweets_a = clean_data_a(tweets_a)
             tweets_a.to_csv(cleaned_file, index=False)
-            print(f"Saved to '{cleaned_file}'")
+            print(f"Saved cleaned data to '{cleaned_file}'")
         except Exception as e:
             print(f"Error in STAGE 1: {e}")
             return
 
     # emotion labeling
-    labeled_file = '../data/labeled_tweets_auto.csv'
     if not os.path.exists(labeled_file):
+        # in test mode, use subset_size data
+        # in full run, use Config.TRAIN_SAMPLES
+        sample_n = len(tweets_a) if test_mode else Config.TRAIN_SAMPLES
 
-        train_sample = 20 if test_mode else Config.TRAIN_SAMPLES
-
-        # Ensure we don't request more samples than we have
-        train_sample = min(train_sample, len(tweets_a))
-
-        labeled_df = create_training_data_automatically(
-            tweets_a, sample_size=train_sample)
-        print(f"\nCreated {len(labeled_df)} labeled training samples")
+        print(f"\n[STAGE 2] Generating labels for {sample_n} tweets...")
+        labeled_df = create_training_data_automatically(tweets_a, sample_size=sample_n)
+        labeled_df.to_csv(labeled_file, index=False)
     else:
-        print(f"\n[STAGE 2] Loading existing labeled data from "
-              f"'{labeled_file}'")
+        print(f"\n[STAGE 2] Loading existing labeled data from '{labeled_file}'")
 
     # train parsbert
-    model_path = './models/parsbert_emotion_model'
-    if not os.path.exists(model_path) or not os.path.exists(
-            os.path.join(model_path, 'config.json')):
-        print("\n[STAGE 3] TRAINING PARSBERT EMOTION CLASSIFIER")
-        try:
-            # low epochs if the function supports kwargs
-            train_emotion_classifier(labeled_file, output_dir=model_path, num_train_epochs=1)
-        except TypeError:
-            # fallback
-            train_emotion_classifier(labeled_file, output_dir=model_path)
+    print("\n[STAGE 3] TRAINING PARSBERT EMOTION CLASSIFIER")
+    epochs = 1 if test_mode else Config.NUM_EPOCHS
+
+    if not os.path.exists(os.path.join(model_dir, 'config.json')):
+        if test_mode:
+            Config.NUM_EPOCHS = epochs
+            Config.TRAIN_SAMPLES = subset_size
+        # pass the specific labeled_file path to the trainer
+        train_emotion_classifier(labeled_file, output_dir=model_dir)
     else:
         print("\n[STAGE 3] MODEL ALREADY TRAINED - Skipping training")
 
-    # preict
+    # predict
     print("\n[STAGE 4] PREDICTING EMOTIONS")
-    emotion_file = '../data/tweets_with_emotions.csv'
-
     if not os.path.exists(emotion_file):
-        tweets_a = predict_emotions(tweets_a, model_path=model_path)
-        tweets_a.to_csv(emotion_file, index=False)
+        tweets_predict = predict_emotions(tweets_a, model_path=model_dir)
+        tweets_predict.to_csv(emotion_file, index=False)
         print(f"Saved predictions to '{emotion_file}'")
     else:
         print(f"Loading existing predictions from '{emotion_file}'")
@@ -380,4 +400,4 @@ def run_emotion_analysis(test_mode=True, subset_size: int = 10) -> None:
 
 
 if __name__ == "__main__":
-    run_emotion_analysis(test_mode=True, subset_size=10)
+    run_emotion_analysis(test_mode=True, subset_size=50)
