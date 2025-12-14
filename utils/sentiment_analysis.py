@@ -400,4 +400,4 @@ def run_emotion_analysis(test_mode: bool = True, subset_size: int = 10) -> None:
 
 
 if __name__ == "__main__":
-    run_emotion_analysis(test_mode=True, subset_size=50)
+    run_emotion_analysis(test_mode=False, subset_size=50)

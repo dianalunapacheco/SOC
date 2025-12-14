@@ -11,7 +11,7 @@ warnings.filterwarnings('ignore')
 class Config:
     """Configuration class for model and analysis parameters."""
     # determine the run mode, testing, local or cloud
-    RUN_MODE = "TEST"
+    RUN_MODE = "CLOUD"
 
     # ParsBERT Model
     MODEL_NAME = "HooshvareLab/bert-fa-base-uncased"
