@@ -19,8 +19,11 @@ import warnings
 from preprocessing import (
     Config, obtain_file_a, clean_data_a
 )
-
+from log_utils import setup_logger
 warnings.filterwarnings('ignore')
+
+
+logger = setup_logger('./logs/sentiment_analysis.log')
 
 
 # emotion labeling
@@ -29,10 +32,10 @@ def auto_label_emotions_contextaware(tweets_df, sample_size=None):
     Context-aware emotion labeling for Persian protest tweets using
     keyword heuristics and multilingual sentiment analysis.
     """
-    print("\n" + "="*70)
-    print(" CONTEXT-AWARE EMOTION LABELING FOR PROTEST TWEETS")
-    print("="*70)
-    print("Loading sentiment analyzer...")
+    logger.info("\n" + "="*70)
+    logger.info(" CONTEXT-AWARE EMOTION LABELING FOR PROTEST TWEETS")
+    logger.info("="*70)
+    logger.info("Loading sentiment analyzer...")
     try:
         sentiment_analyzer = pipeline(
             "sentiment-analysis",
@@ -51,8 +54,7 @@ def auto_label_emotions_contextaware(tweets_df, sample_size=None):
     else:
         tweets_sample = tweets_df
 
-    print(f"Labeling {len(tweets_sample)} tweets with context-aware "
-          f"approach...")
+    logger.info(f"Labeling {len(tweets_sample)} tweets with context-aware approach...")
 
     # persian protest-specific keywords
     emotion_keywords = {
@@ -71,7 +73,7 @@ def auto_label_emotions_contextaware(tweets_df, sample_size=None):
         batch = tweets_sample.iloc[i:i+batch_size]
         texts = batch['text'].tolist()
         if i % 5000 == 0:
-            print(f"Processed {i}/{len(tweets_sample)} tweets...")
+            logger.info(f"Processed {i}/{len(tweets_sample)} tweets...")
 
         try:
             sentiments = sentiment_analyzer(texts, truncation=True,
@@ -109,7 +111,7 @@ def auto_label_emotions_contextaware(tweets_df, sample_size=None):
                 })
 
         except Exception as e:
-            print(f"Error processing batch {i}: {e}")
+            logger.error(f"Error processing batch {i}: {e}")
             for text in texts:
                 labeled_tweets.append({
                     'text': text, 'emotion': 'anger', 'confidence': 0.5
@@ -117,8 +119,8 @@ def auto_label_emotions_contextaware(tweets_df, sample_size=None):
             continue
 
     labeled_df = pd.DataFrame(labeled_tweets)
-    print("\nEmotion distribution (context-aware):")
-    print(labeled_df['emotion'].value_counts())
+    logger.info("\nEmotion distribution (context-aware):")
+    logger.info(labeled_df['emotion'].value_counts())
     return labeled_df
 
 
@@ -127,17 +129,16 @@ def create_training_data_automatically(tweets_df, sample_size=5000):
     Create training data automatically using the context-aware
     labeling heuristic.
     """
-    print("\n" + "="*70)
-    print(" AUTOMATIC TRAINING DATA GENERATION")
-    print("="*70)
-    print(f"Sample size: {sample_size}")
+    logger.info("\n" + "="*70)
+    logger.info(" AUTOMATIC TRAINING DATA GENERATION")
+    logger.info("="*70)
+    logger.info(f"Sample size: {sample_size}")
 
     labeled_df = auto_label_emotions_contextaware(tweets_df, sample_size)
 
     min_samples = labeled_df['emotion'].value_counts().min()
     if min_samples < 100:
-        print(f"\nWarning: Some emotions have very few samples "
-              f"(min={min_samples})")
+        logger.info(f"\nWarning: Some emotions have very few samples (min={min_samples})")
 
     return labeled_df
 
@@ -147,23 +148,23 @@ def train_emotion_classifier(labeled_tweets_path,
     """
     Train ParsBERT for emotion classification on auto-labeled data.
     """
-    print("\n" + "="*60)
-    print("TRAINING EMOTION CLASSIFIER")
-    print("="*60)
+    logger.info("\n" + "="*60)
+    logger.info("TRAINING EMOTION CLASSIFIER")
+    logger.info("="*60)
 
     labeled_df = pd.read_csv(labeled_tweets_path)
     labeled_df['label'] = labeled_df['emotion'].map(Config.LABEL2ID)
     labeled_df = labeled_df.dropna(subset=['label', 'text'])
 
-    print(f"Total labeled samples: {len(labeled_df)}")
-    print("\nEmotion distribution:")
-    print(labeled_df['emotion'].value_counts())
+    logger.info(f"Total labeled samples: {len(labeled_df)}")
+    logger.info("\nEmotion distribution:")
+    logger.info(labeled_df['emotion'].value_counts())
 
     min_class_count = labeled_df['label'].value_counts().min()
 
     if min_class_count < 5:
-        print(f"\n[!] WARNING: Smallest class has only {min_class_count} samples.")
-        print("    Disabling stratification to prevent crash.")
+        logger.info(f"\n[!] WARNING: Smallest class has only {min_class_count} samples.")
+        logger.info("    Disabling stratification to prevent crash.")
         stratify_strategy = None
         stratify_val = None
     else:
@@ -185,8 +186,7 @@ def train_emotion_classifier(labeled_tweets_path,
         temp_texts, temp_labels, test_size=0.5, random_state=42,
         stratify=stratify_val)
 
-    print(f"\nTrain: {len(train_texts)}, Val: {len(val_texts)}, "
-          f"Test: {len(test_texts)}")
+    logger.info(f"\nTrain: {len(train_texts)}, Val: {len(val_texts)}, Test: {len(test_texts)}")
 
     tokenizer = AutoTokenizer.from_pretrained(Config.MODEL_NAME)
     model = AutoModelForSequenceClassification.from_pretrained(
@@ -229,16 +229,16 @@ def train_emotion_classifier(labeled_tweets_path,
 
     trainer.train()
 
-    print("\n" + "="*60)
-    print("EVALUATING ON TEST SET")
-    print("="*60)
+    logger.info("\n" + "="*60)
+    logger.info("EVALUATING ON TEST SET")
+    logger.info("="*60)
 
     test_predictions = trainer.predict(HFDataset.from_dict({
         'text': test_texts, 'label': test_labels
     }).map(tokenize_function, batched=True))
 
     y_pred = np.argmax(test_predictions.predictions, axis=-1)
-    print(classification_report(
+    logger.info(classification_report(
         test_labels, y_pred,
         labels=list(range(len(Config.LABELS))),
         target_names=Config.LABELS,
@@ -255,19 +255,19 @@ def train_emotion_classifier(labeled_tweets_path,
     plt.xlabel('Predicted Label')
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, 'confusion_matrix.png'), dpi=300)
-    print(f"\nConfusion matrix saved as {os.path.join(output_dir, 'confusion_matrix.png')}")
+    logger.info(f"\nConfusion matrix saved as {os.path.join(output_dir, 'confusion_matrix.png')}")
     trainer.save_model(output_dir)
     tokenizer.save_pretrained(output_dir)
-    print(f"\nModel saved to {output_dir}")
+    logger.info(f"\nModel saved to {output_dir}")
 
     return trainer
 
 
 def predict_emotions(tweets_df, model_path='./models/parsbert_emotion_model'):
     """Predict emotions for tweets using trained ParsBERT model"""
-    print("\n" + "="*60)
-    print("PREDICTING EMOTIONS ON FULL DATASET")
-    print("="*60)
+    logger.info("\n" + "="*60)
+    logger.info("PREDICTING EMOTIONS ON FULL DATASET")
+    logger.info("="*60)
 
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     model = AutoModelForSequenceClassification.from_pretrained(model_path)
@@ -278,11 +278,11 @@ def predict_emotions(tweets_df, model_path='./models/parsbert_emotion_model'):
     predictions = []
     probabilities = []
 
-    print(f"Processing {len(tweets_df)} tweets...")
+    logger.info(f"Processing {len(tweets_df)} tweets...")
 
     for idx, text in enumerate(tweets_df['text'].tolist()):
         if idx % 10000 == 0:
-            print(f"Processed {idx}/{len(tweets_df)} tweets...")
+            logger.info(f"Processed {idx}/{len(tweets_df)} tweets...")
 
         inputs = tokenizer(text, return_tensors='pt', truncation=True,
                            max_length=Config.MAX_LENGTH,
@@ -300,8 +300,8 @@ def predict_emotions(tweets_df, model_path='./models/parsbert_emotion_model'):
     for idx, emotion in enumerate(Config.LABELS):
         tweets_df[f'prob_{emotion}'] = [prob[idx] for prob in probabilities]
 
-    print("\nEmotion distribution in predictions:")
-    print(tweets_df['predicted_emotion'].value_counts())
+    logger.info("\nEmotion distribution in predictions:")
+    logger.info(tweets_df['predicted_emotion'].value_counts())
 
     return tweets_df
 
@@ -313,10 +313,10 @@ def run_emotion_analysis(test_mode: bool = True, subset_size: int = 10) -> None:
     :param test_mode: for testing only on a small subset (debugging).
     :param subset_size: number of samples to use in test mode.
     """
-    print("\n" + "="*70)
+    logger.info("\n" + "="*70)
     mode_str = "TEST MODE" if test_mode else "FULL_RUN"
-    print(f" MAHSA AMINI MOVEMENT: EMOTION CLASSIFICATION (NLP) - {mode_str} ")
-    print("="*70)
+    logger.info(f" MAHSA AMINI MOVEMENT: EMOTION CLASSIFICATION (NLP) - {mode_str} ")
+    logger.info("="*70)
 
     # separate files for testing and real run
     if test_mode:
@@ -339,23 +339,23 @@ def run_emotion_analysis(test_mode: bool = True, subset_size: int = 10) -> None:
     os.makedirs(output_dir, exist_ok=True)
 
     # data prep
-    print("\n[STAGE 1] DATA PREPROCESSING (Dataset A)")
+    logger.info("\n[STAGE 1] DATA PREPROCESSING (Dataset A)")
     if os.path.exists(cleaned_file):
         tweets_a = pd.read_csv(cleaned_file)
-        print(f"Loaded {len(tweets_a)} cleaned tweets")
+        logger.info(f"Loaded {len(tweets_a)} cleaned tweets")
     else:
         try:
             tweets_a = obtain_file_a()
             if test_mode:
-                print(f"Selecting a subset of {subset_size} samples for testing")
+                logger.info(f"Selecting a subset of {subset_size} samples for testing")
                 # slice the data before cleaning and saving
                 tweets_a = tweets_a.head(subset_size)
 
             tweets_a = clean_data_a(tweets_a)
             tweets_a.to_csv(cleaned_file, index=False)
-            print(f"Saved cleaned data to '{cleaned_file}'")
+            logger.info(f"Saved cleaned data to '{cleaned_file}'")
         except Exception as e:
-            print(f"Error in STAGE 1: {e}")
+            logger.info(f"Error in STAGE 1: {e}")
             return
 
     # emotion labeling
@@ -364,14 +364,14 @@ def run_emotion_analysis(test_mode: bool = True, subset_size: int = 10) -> None:
         # in full run, use Config.TRAIN_SAMPLES
         sample_n = len(tweets_a) if test_mode else Config.TRAIN_SAMPLES
 
-        print(f"\n[STAGE 2] Generating labels for {sample_n} tweets...")
+        logger.info(f"\n[STAGE 2] Generating labels for {sample_n} tweets...")
         labeled_df = create_training_data_automatically(tweets_a, sample_size=sample_n)
         labeled_df.to_csv(labeled_file, index=False)
     else:
-        print(f"\n[STAGE 2] Loading existing labeled data from '{labeled_file}'")
+        logger.info(f"\n[STAGE 2] Loading existing labeled data from '{labeled_file}'")
 
     # train parsbert
-    print("\n[STAGE 3] TRAINING PARSBERT EMOTION CLASSIFIER")
+    logger.info("\n[STAGE 3] TRAINING PARSBERT EMOTION CLASSIFIER")
     epochs = 1 if test_mode else Config.NUM_EPOCHS
 
     if not os.path.exists(os.path.join(model_dir, 'config.json')):
@@ -381,22 +381,22 @@ def run_emotion_analysis(test_mode: bool = True, subset_size: int = 10) -> None:
         # pass the specific labeled_file path to the trainer
         train_emotion_classifier(labeled_file, output_dir=model_dir)
     else:
-        print("\n[STAGE 3] MODEL ALREADY TRAINED - Skipping training")
+        logger.info("\n[STAGE 3] MODEL ALREADY TRAINED - Skipping training")
 
     # predict
-    print("\n[STAGE 4] PREDICTING EMOTIONS")
+    logger.info("\n[STAGE 4] PREDICTING EMOTIONS")
     if not os.path.exists(emotion_file):
         tweets_predict = predict_emotions(tweets_a, model_path=model_dir)
         tweets_predict.to_csv(emotion_file, index=False)
-        print(f"Saved predictions to '{emotion_file}'")
+        logger.info(f"Saved predictions to '{emotion_file}'")
     else:
-        print(f"Loading existing predictions from '{emotion_file}'")
+        logger.info(f"Loading existing predictions from '{emotion_file}'")
 
-    print("\n" + "="*70)
-    print(" EMOTION ANALYSIS COMPLETE ")
-    print("="*70)
-    print(f"Final output: {emotion_file}")
-    print("Run network_analysis.py next.")
+    logger.info("\n" + "="*70)
+    logger.info(" EMOTION ANALYSIS COMPLETE ")
+    logger.info("="*70)
+    logger.info(f"Final output: {emotion_file}")
+    logger.info("Run network_analysis.py next.")
 
 
 if __name__ == "__main__":
