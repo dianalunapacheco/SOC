@@ -271,34 +271,51 @@ def predict_emotions(tweets_df, model_path='./models/parsbert_emotion_model'):
 
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     model = AutoModelForSequenceClassification.from_pretrained(model_path)
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
     model.eval()
 
+    # prepare the data
+    texts = tweets_df['text'].tolist()
+    logger.info(f"Processing {len(texts)} tweets...")
+
     predictions = []
     probabilities = []
+    BATCH_SIZE = 64
 
-    logger.info(f"Processing {len(tweets_df)} tweets...")
+    with torch.no_grad():
+        for i in range(0, len(texts), BATCH_SIZE):
+            batch_texts = texts[i:i+BATCH_SIZE]
+            batch_texts = [str(t) for t in batch_texts]
 
-    for idx, text in enumerate(tweets_df['text'].tolist()):
-        if idx % 10000 == 0:
-            logger.info(f"Processed {idx}/{len(tweets_df)} tweets...")
+            inputs = tokenizer(
+                batch_texts,
+                return_tensors='pt',
+                truncation=True,
+                max_length=Config.MAX_LENGTH,
+                padding=True
+            ).to(device)
 
-        inputs = tokenizer(text, return_tensors='pt', truncation=True,
-                           max_length=Config.MAX_LENGTH,
-                           padding='max_length').to(device)
-
-        with torch.no_grad():
+            # inference
             outputs = model(**inputs)
             probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
-            pred = torch.argmax(probs, dim=-1)
+            preds = torch.argmax(probs, dim=-1)
 
-        predictions.append(Config.ID2LABEL[pred.item()])
-        probabilities.append(probs.cpu().numpy()[0])
+            # store results
+            predictions.extend([Config.ID2LABEL[p.item()] for p in preds])
+            probabilities.extend(probs.cpu().numpy().tolist())
+
+            # log progress
+            if (i // BATCH_SIZE) % 500 == 0 and i > 0:
+                logger.info(f"Processed {i}/{len(texts)} tweets...({i/len(texts)*100:.1f}%)")
 
     tweets_df['predicted_emotion'] = predictions
+
+    # unpack probabilities
+    prob_array = np.array(probabilities)
     for idx, emotion in enumerate(Config.LABELS):
-        tweets_df[f'prob_{emotion}'] = [prob[idx] for prob in probabilities]
+        tweets_df[f'prob_{emotion}'] = prob_array[:, idx]
 
     logger.info("\nEmotion distribution in predictions:")
     logger.info(tweets_df['predicted_emotion'].value_counts())

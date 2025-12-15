@@ -54,7 +54,7 @@ class Config:
         NUM_EPOCHS = 3
         BATCH_SIZE = 8
     elif RUN_MODE == "CLOUD":
-        TRAIN_SAMPLES = 100000
+        TRAIN_SAMPLES = 40000
         NUM_EPOCHS = 4
         BATCH_SIZE = 32
 
