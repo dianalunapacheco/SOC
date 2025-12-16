@@ -80,6 +80,7 @@ def obtain_file_b():
     if csv_files:
         tweets = pd.read_csv(os.path.join(data_path_b, csv_files[0]),
                              low_memory=False)
+        print("DUBUG: DATASET RETRIEVED")
         return tweets
     raise FileNotFoundError("No CSV file found in Dataset B download.")
 
@@ -130,21 +131,21 @@ def filter_bots_b(tweets_df):
 
     if 'user_created' in tweets_df.columns:
         tweets_df['user_created'] = pd.to_datetime(tweets_df['user_created'],
-                                                   errors='coerce')
+                                                   errors='coerce', utc=True)
 
     if 'date' in tweets_df.columns:
-        tweets_df['date'] = pd.to_datetime(tweets_df['date'], errors='coerce')
+        tweets_df['date'] = pd.to_datetime(tweets_df['date'], errors='coerce', utc=True)
 
     if 'user_created' in tweets_df.columns:
-        tweets_df['flag_new_account'] = tweets_df['user_created'] > \
-            pd.to_datetime(Config.BOT_CREATION_DATE)
+        threshold = pd.to_datetime(Config.BOT_CREATION_DATE).tz_localize('UTC')
+        tweets_df['flag_new_account'] = tweets_df['user_created'] > threshold
     else:
         tweets_df['flag_new_account'] = False
 
     if 'user_tweets' in tweets_df.columns and \
        'user_created' in tweets_df.columns:
         tweets_df['account_age_days'] = \
-            (pd.Timestamp.now() - tweets_df['user_created']).dt.days
+            (pd.Timestamp.now(tz="UTC") - tweets_df['user_created']).dt.days
         tweets_df['account_age_days'] = \
             tweets_df['account_age_days'].clip(lower=1)
         tweets_df['tweets_per_day'] = \

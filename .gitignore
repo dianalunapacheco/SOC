@@ -212,3 +212,9 @@ __marimo__/
 #specific folders
 .DS_Store/
 models_test/
+
+# specific files that are too large in size to be tracked
+/data/tweets_with_emotions.csv
+/data/clean_data_a.csv
+/data/tweets_filtered_for_sna.csv
+test.py

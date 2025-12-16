@@ -1,9 +1,7 @@
 import pandas as pd
 import os
 import networkx as nx
-import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
 # Import Config and functions from the preprocessing file
 from preprocessing import (
     Config, obtain_file_b, filter_bots_b
@@ -20,6 +18,7 @@ def calculate_emotional_intensity(tweets_df, date_column='date'):
     print("Calculating emtotional intensity (Period 1 Only)")
     print("="*60)
 
+    tweets_df.rename(columns={"Timestamp": "date"}, inplace=True)
     tweets_df[date_column] = pd.to_datetime(tweets_df[date_column])
     tweets_df['is_high_arousal'] = \
         tweets_df['predicted_emotion'].isin(Config.HIGH_AROUSAL)
